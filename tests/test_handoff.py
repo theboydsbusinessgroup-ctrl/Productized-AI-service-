@@ -19,8 +19,9 @@ def test_handoff_returns_paid_intake_token():
     assert r.status_code==200
     assert r.json()=={'ready':True,'state':'PAID','order_id':'ord_1','intake_token':'tok_1'}
 
-def test_success_page_is_mobile_intake_handoff():
+def test_success_page_is_mobile_instant_fulfillment_handoff():
     r=client.get('/success?session_id=cs_test_1')
     assert r.status_code==200
-    assert 'Submit and start production' in r.text
+    assert 'Generate my content pack' in r.text
+    assert 'Download your content pack' in r.text
     assert 'viewport' in r.text
