@@ -46,8 +46,10 @@ def create_checkout(payload:CheckoutRequest):
     base=os.getenv('STRIPE_PAYMENT_LINK_URL')
     if not base: raise HTTPException(503,'Checkout is not configured')
     order_id=f"ord_{secrets.token_urlsafe(9)}"
-    try: get_store().create_order(order_id,str(payload.customer_email),49,'CHECKOUT_PENDING'); get_store().log_event('checkout_started',order_id=order_id,source=payload.source)
+    try: get_store().create_order(order_id,str(payload.customer_email),49,'CHECKOUT_PENDING')
     except Exception: raise HTTPException(503,'Order storage unavailable')
+    try: get_store().log_event('checkout_started',order_id=order_id,source=payload.source)
+    except Exception: pass
     sep='&' if '?' in base else '?'
     return CheckoutResponse(order_id=order_id,state=OrderState.CHECKOUT_PENDING,amount_usd=49,checkout_url=f'{base}{sep}client_reference_id={order_id}')
 @app.post('/webhooks/stripe')
