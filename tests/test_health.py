@@ -5,9 +5,11 @@ client=TestClient(app)
 
 def test_health(monkeypatch):
     monkeypatch.setenv("DATABASE_URL","postgresql://configured")
+    monkeypatch.setenv("STRIPE_WEBHOOK_TOKEN","configured")
     data=client.get("/health").json()
     assert data["status"] == "ok"
     assert data["persistent_store"] is True
+    assert data["webhook_auth"] is True
 
 def test_offer():
     assert client.get("/offer").json()["price_usd"] == 49

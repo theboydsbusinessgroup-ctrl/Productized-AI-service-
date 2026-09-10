@@ -26,10 +26,12 @@ def test_checkout_requires_configuration(monkeypatch):
 
 def test_paid_order_persists_and_unlocks_intake(monkeypatch):
     monkeypatch.setenv("STRIPE_PAYMENT_LINK_URL","https://buy.stripe.com/test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_TOKEN","test-webhook-token")
     checkout=client.post("/checkout",json={"customer_email":"buyer@example.com"})
     assert checkout.status_code == 200
     order_id=checkout.json()["order_id"]
-    paid=client.post("/webhooks/stripe",json={"type":"checkout.session.completed","data":{"object":{"id":"cs_test_123","client_reference_id":order_id}}})
+    assert client.post("/webhooks/stripe",json={"type":"checkout.session.completed"}).status_code == 401
+    paid=client.post("/webhooks/stripe?token=test-webhook-token",json={"type":"checkout.session.completed","data":{"object":{"id":"cs_test_123","client_reference_id":order_id}}})
     assert paid.status_code == 200
     token=paid.json()["intake_token"]
     intake=client.post(f"/orders/{order_id}/intake",headers={"x-intake-token":token},json={"business_name":"Acme","industry":"Home services"})

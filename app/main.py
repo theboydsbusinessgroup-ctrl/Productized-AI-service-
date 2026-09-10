@@ -3,12 +3,12 @@ import secrets
 from enum import Enum
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
 from app.store import get_store
 
-app = FastAPI(title="Productized AI Service Engine", version="0.3.0")
+app = FastAPI(title="Productized AI Service Engine", version="0.3.1")
 
 OFFER = {"id":"social-content-pack-30d","name":"30-Day Social Content Pack","price_usd":49,"recurring_refresh_usd":29,"deliverables":["10 social posts","10 captions","10 hooks","5 promotional ideas","5 Google Business Profile posts","30-day content calendar"]}
 
@@ -41,7 +41,7 @@ def _new_order_id():
 
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"productized-ai-service-engine","version":"0.3.0","payment_gate":True,"persistent_store":bool(os.getenv("DATABASE_URL"))}
+    return {"status":"ok","service":"productized-ai-service-engine","version":"0.3.1","payment_gate":True,"persistent_store":bool(os.getenv("DATABASE_URL")),"webhook_auth":bool(os.getenv("STRIPE_WEBHOOK_TOKEN"))}
 
 @app.get("/offer")
 def offer():
@@ -61,11 +61,10 @@ def create_checkout(payload: CheckoutRequest):
     return CheckoutResponse(order_id=order_id,state=OrderState.CHECKOUT_PENDING,amount_usd=OFFER["price_usd"],checkout_url=f"{checkout_base}{separator}client_reference_id={order_id}")
 
 @app.post("/webhooks/stripe")
-async def stripe_webhook(request: Request, x_webhook_secret: str | None = Header(default=None)):
-    expected = os.getenv("STRIPE_WEBHOOK_SHARED_SECRET")
-    if expected and x_webhook_secret != expected:
-        raise HTTPException(status_code=401, detail="Invalid webhook secret")
-    event = await request.json()
+async def stripe_webhook(event: dict, token: str | None = Query(default=None)):
+    expected = os.getenv("STRIPE_WEBHOOK_TOKEN")
+    if not expected or not secrets.compare_digest(token or "", expected):
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
     if event.get("type") != "checkout.session.completed":
         return {"received":True,"ignored":True}
     session = event.get("data",{}).get("object",{})
@@ -82,7 +81,7 @@ async def stripe_webhook(request: Request, x_webhook_secret: str | None = Header
     return {"received":True,"order_id":order_id,"state":OrderState.PAID,"intake_token":intake_token}
 
 @app.post("/orders/{order_id}/intake")
-def submit_intake(order_id: str, intake: Intake, x_intake_token: str | None = Header(default=None)):
+def submit_intake(order_id: str, intake: Intake, x_intake_token: str | None = None):
     try:
         order = get_store().get_order(order_id)
     except Exception:
