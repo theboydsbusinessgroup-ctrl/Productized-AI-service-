@@ -3,7 +3,7 @@ import secrets
 from enum import Enum
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
 from app.store import get_store
@@ -83,7 +83,7 @@ async def stripe_webhook(event: dict, token: str | None = Query(default=None)):
     return {"received":True,"order_id":order_id,"state":OrderState.PAID,"intake_token":intake_token}
 
 @app.post("/orders/{order_id}/intake")
-def submit_intake(order_id: str, intake: Intake, x_intake_token: str | None = None):
+def submit_intake(order_id: str, intake: Intake, x_intake_token: str | None = Header(default=None)):
     try:
         order = get_store().get_order(order_id)
     except Exception:

@@ -27,6 +27,7 @@ def test_checkout_requires_configuration(monkeypatch):
 def test_paid_order_persists_and_unlocks_intake(monkeypatch):
     monkeypatch.setenv("STRIPE_PAYMENT_LINK_URL","https://buy.stripe.com/test")
     monkeypatch.setenv("STRIPE_WEBHOOK_TOKEN","test-webhook-token")
+    monkeypatch.setenv("STRIPE_WEBHOOK_TOKEN_ENFORCED","true")
     checkout=client.post("/checkout",json={"customer_email":"buyer@example.com"})
     assert checkout.status_code == 200
     order_id=checkout.json()["order_id"]
