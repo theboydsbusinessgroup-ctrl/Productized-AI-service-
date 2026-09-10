@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.store import get_store
 
-app = FastAPI(title="Productized AI Service Engine", version="0.3.1")
+app = FastAPI(title="Productized AI Service Engine", version="0.3.2")
 
 OFFER = {"id":"social-content-pack-30d","name":"30-Day Social Content Pack","price_usd":49,"recurring_refresh_usd":29,"deliverables":["10 social posts","10 captions","10 hooks","5 promotional ideas","5 Google Business Profile posts","30-day content calendar"]}
 
@@ -41,7 +41,7 @@ def _new_order_id():
 
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"productized-ai-service-engine","version":"0.3.1","payment_gate":True,"persistent_store":bool(os.getenv("DATABASE_URL")),"webhook_auth":bool(os.getenv("STRIPE_WEBHOOK_TOKEN"))}
+    return {"status":"ok","service":"productized-ai-service-engine","version":"0.3.2","payment_gate":True,"persistent_store":bool(os.getenv("DATABASE_URL")),"webhook_token_configured":bool(os.getenv("STRIPE_WEBHOOK_TOKEN")),"webhook_token_enforced":os.getenv("STRIPE_WEBHOOK_TOKEN_ENFORCED","false").lower()=="true"}
 
 @app.get("/offer")
 def offer():
@@ -62,9 +62,11 @@ def create_checkout(payload: CheckoutRequest):
 
 @app.post("/webhooks/stripe")
 async def stripe_webhook(event: dict, token: str | None = Query(default=None)):
-    expected = os.getenv("STRIPE_WEBHOOK_TOKEN")
-    if not expected or not secrets.compare_digest(token or "", expected):
-        raise HTTPException(status_code=401, detail="Invalid webhook token")
+    enforce = os.getenv("STRIPE_WEBHOOK_TOKEN_ENFORCED","false").lower()=="true"
+    if enforce:
+        expected = os.getenv("STRIPE_WEBHOOK_TOKEN")
+        if not expected or not secrets.compare_digest(token or "", expected):
+            raise HTTPException(status_code=401, detail="Invalid webhook token")
     if event.get("type") != "checkout.session.completed":
         return {"received":True,"ignored":True}
     session = event.get("data",{}).get("object",{})
