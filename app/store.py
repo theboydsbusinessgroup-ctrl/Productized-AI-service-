@@ -28,6 +28,20 @@ class PostgresOrderStore:
             with conn.cursor() as cur:
                 cur.execute("update public.productized_ai_orders set state='DELIVERY_READY',intake=%s::jsonb,deliverable_text=%s,delivered_at=now(),updated_at=now() where order_id=%s returning *",(psycopg.types.json.Jsonb(intake),deliverable_text,order_id)); row=cur.fetchone(); return dict(row) if row else None
 
+    def log_event(self,event_type:str,order_id:str|None=None,source:str|None=None,metadata:dict[str,Any]|None=None):
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("insert into public.productized_ai_funnel_events(event_type,order_id,source,metadata) values (%s,%s,%s,%s::jsonb)",(event_type,order_id,source,psycopg.types.json.Jsonb(metadata or {})))
+
+    def funnel_summary(self):
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select event_type,count(*)::int as count from public.productized_ai_funnel_events group by event_type order by event_type")
+                counts={r['event_type']:r['count'] for r in cur.fetchall()}
+                cur.execute("select count(*)::int as paid_orders from public.productized_ai_orders where state in ('PAID','DELIVERY_READY')")
+                paid=cur.fetchone()['paid_orders']
+                return {'events':counts,'paid_orders':paid}
+
 _store=None
 def get_store():
     global _store
