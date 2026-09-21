@@ -10,7 +10,8 @@ from app.stripe_security import construct_verified_event
 
 def _signed(payload: bytes, secret: str) -> str:
     timestamp = int(time.time())
-    signature = stripe.WebhookSignature._compute_signature(f"{timestamp}.".encode() + payload, secret)
+    signed_payload = f"{timestamp}." + payload.decode("utf-8")
+    signature = stripe.WebhookSignature._compute_signature(signed_payload, secret)
     return f"t={timestamp},v1={signature}"
 
 
