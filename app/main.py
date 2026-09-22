@@ -60,13 +60,32 @@ async def stripe_webhook(request:Request,token:str|None=Query(default=None)):
     if enforce:
         expected=os.getenv('STRIPE_WEBHOOK_TOKEN')
         if not expected or not secrets.compare_digest(token or '',expected): raise HTTPException(401,'Invalid webhook token')
-    if event.get('type')!='checkout.session.completed': return {'received':True,'ignored':True}
+    if event.get('type') not in {'checkout.session.completed','checkout.session.async_payment_succeeded'}:
+        return {'received':True,'ignored':True}
     session=event.get('data',{}).get('object',{}); order_id=session.get('client_reference_id')
-    if not order_id: raise HTTPException(400,'Missing client_reference_id')
-    try: order=get_store().mark_paid(order_id,session.get('id'),secrets.token_urlsafe(24))
+    if not order_id: return {'received':True,'ignored':True,'reason':'missing_client_reference_id'}
+    try: order=get_store().get_order(order_id)
     except Exception: raise HTTPException(503,'Order storage unavailable')
-    if not order: raise HTTPException(404,'Order not found')
-    try: get_store().log_event('paid',order_id=order_id,metadata={'stripe_session_id':session.get('id')})
+    if not order: return {'received':True,'ignored':True,'reason':'unknown_order'}
+    session_id=session.get('id')
+    if order['state'] in {'PAID','DELIVERY_READY'}:
+        if order.get('stripe_session_id')==session_id:
+            return {'received':True,'order_id':order_id,'state':order['state'],'duplicate':True}
+        raise HTTPException(409,'Order is already associated with another Checkout Session')
+    expected_payment_link=os.getenv('STRIPE_PAYMENT_LINK_ID')
+    checks=(
+        (session.get('payment_status')=='paid','payment_not_paid'),
+        (session.get('mode')=='payment','unexpected_checkout_mode'),
+        (session.get('amount_total')==order['amount_usd']*100,'unexpected_amount'),
+        (str(session.get('currency','')).lower()=='usd','unexpected_currency'),
+        (not expected_payment_link or session.get('payment_link')==expected_payment_link,'unexpected_payment_link'),
+    )
+    for valid,reason in checks:
+        if not valid: return {'received':True,'ignored':True,'reason':reason}
+    try: order=get_store().mark_paid(order_id,session_id,secrets.token_urlsafe(24))
+    except Exception: raise HTTPException(503,'Order storage unavailable')
+    if not order: raise HTTPException(409,'Order payment state changed; retry the event')
+    try: get_store().log_event('paid',order_id=order_id,metadata={'stripe_session_id':session_id})
     except Exception: pass
     return {'received':True,'order_id':order_id,'state':'PAID'}
 @app.get('/handoff')
