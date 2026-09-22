@@ -102,3 +102,13 @@ def test_webhook_fails_closed_without_payment_link_binding(monkeypatch):
     response=client.post('/webhooks/stripe',content=payload,headers=headers)
     assert response.status_code==503
     assert response.json()['detail']=='Stripe Payment Link verification is not configured'
+
+
+def test_webhook_rejects_different_payment_link(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    payload,headers=signed_webhook(paid_session(order_id,payment_link='plink_other'),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='unexpected_payment_link'
