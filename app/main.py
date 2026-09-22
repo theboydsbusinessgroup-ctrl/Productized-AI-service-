@@ -3,12 +3,13 @@ import secrets
 from enum import Enum
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from app.generator import build_content_pack
 from app.store import get_store
+from app.stripe_security import construct_verified_event
 
 app=FastAPI(title='Productized AI Service Engine',version='0.7.0')
 OFFER={'id':'social-content-pack-30d','name':'30-Day Social Content Pack','price_usd':49,'recurring_refresh_usd':29,'deliverables':['10 social posts','10 captions','10 hooks','5 promotional ideas','5 Google Business Profile posts','30-day content calendar']}
@@ -53,7 +54,8 @@ def create_checkout(payload:CheckoutRequest):
     sep='&' if '?' in base else '?'
     return CheckoutResponse(order_id=order_id,state=OrderState.CHECKOUT_PENDING,amount_usd=49,checkout_url=f'{base}{sep}client_reference_id={order_id}')
 @app.post('/webhooks/stripe')
-async def stripe_webhook(event:dict,token:str|None=Query(default=None)):
+async def stripe_webhook(request:Request,token:str|None=Query(default=None)):
+    event=construct_verified_event(await request.body(),request.headers.get('stripe-signature'))
     enforce=os.getenv('STRIPE_WEBHOOK_TOKEN_ENFORCED','false').lower()=='true'
     if enforce:
         expected=os.getenv('STRIPE_WEBHOOK_TOKEN')
