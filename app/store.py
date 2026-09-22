@@ -22,7 +22,11 @@ class PostgresOrderStore:
     def mark_paid(self,order_id:str,stripe_session_id:str|None,intake_token:str)->dict[str,Any]|None:
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute("update public.productized_ai_orders set state='PAID',stripe_session_id=%s,intake_token=%s,updated_at=now() where order_id=%s returning *",(stripe_session_id,intake_token,order_id)); row=cur.fetchone(); return dict(row) if row else None
+                cur.execute("update public.productized_ai_orders set state='PAID',stripe_session_id=%s,intake_token=%s,updated_at=now() where order_id=%s and state='CHECKOUT_PENDING' returning *",(stripe_session_id,intake_token,order_id))
+                row=cur.fetchone()
+                if row: return dict(row)
+                cur.execute("select * from public.productized_ai_orders where order_id=%s and stripe_session_id=%s and state in ('PAID','DELIVERY_READY')",(order_id,stripe_session_id))
+                row=cur.fetchone(); return dict(row) if row else None
     def save_fulfillment(self,order_id:str,intake:dict[str,Any],deliverable_text:str)->dict[str,Any]|None:
         with self._connect() as conn:
             with conn.cursor() as cur:
