@@ -112,3 +112,42 @@ def test_webhook_rejects_different_payment_link(monkeypatch):
     response=client.post('/webhooks/stripe',content=payload,headers=headers)
     assert response.status_code==200
     assert response.json()['reason']=='unexpected_payment_link'
+
+
+def test_webhook_ignores_unrelated_signed_event(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    payload,headers=signed_webhook({'type':'customer.created','data':{'object':{'id':'cus_123'}}},secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()=={'received':True,'ignored':True}
+
+
+def test_webhook_ignores_missing_client_reference_id(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    payload,headers=signed_webhook(paid_session(None),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='missing_client_reference_id'
+
+
+def test_webhook_ignores_unknown_order(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    payload,headers=signed_webhook(paid_session('ord_unknown'),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='unknown_order'
+
+
+def test_async_payment_success_marks_order_paid(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    event=paid_session(order_id)
+    event['type']='checkout.session.async_payment_succeeded'
+    payload,headers=signed_webhook(event,secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['state']=='PAID'
