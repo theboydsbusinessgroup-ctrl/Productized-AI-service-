@@ -1,4 +1,9 @@
+import json
+import time
+
+import stripe
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app.store import set_store_for_tests
 
@@ -20,9 +25,14 @@ class FakeStore:
 
 def setup_function(): set_store_for_tests(FakeStore())
 def test_full_zero_cost_fulfillment(monkeypatch):
-    monkeypatch.setenv('STRIPE_PAYMENT_LINK_URL','https://buy.stripe.com/test'); monkeypatch.delenv('STRIPE_WEBHOOK_TOKEN_ENFORCED',raising=False)
+    secret='whsec_test_secret'
+    monkeypatch.setenv('STRIPE_PAYMENT_LINK_URL','https://buy.stripe.com/test'); monkeypatch.setenv('STRIPE_WEBHOOK_SECRET',secret); monkeypatch.delenv('STRIPE_WEBHOOK_TOKEN_ENFORCED',raising=False)
     c=client.post('/checkout',json={'customer_email':'buyer@example.com'}); oid=c.json()['order_id']
-    assert client.post('/webhooks/stripe',json={'type':'checkout.session.completed','data':{'object':{'id':'cs_test_123','client_reference_id':oid}}}).status_code==200
+    payload=json.dumps({'type':'checkout.session.completed','data':{'object':{'id':'cs_test_123','client_reference_id':oid}}},separators=(',',':'))
+    timestamp=int(time.time())
+    signature=stripe.WebhookSignature._compute_signature(f"{timestamp}.{payload}",secret)
+    headers={'stripe-signature':f't={timestamp},v1={signature}','content-type':'application/json'}
+    assert client.post('/webhooks/stripe',content=payload,headers=headers).status_code==200
     h=client.get('/handoff?session_id=cs_test_123').json(); token=h['intake_token']
     r=client.post(f'/orders/{oid}/intake',headers={'x-intake-token':token},json={'business_name':'Acme','industry':'Home Services','location':'Houston','services':['Repairs']})
     assert r.status_code==200 and r.json()['state']=='DELIVERY_READY'
