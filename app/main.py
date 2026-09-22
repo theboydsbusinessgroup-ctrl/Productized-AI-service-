@@ -79,6 +79,7 @@ async def stripe_webhook(request:Request,token:str|None=Query(default=None)):
             return {'received':True,'order_id':order_id,'state':order['state'],'duplicate':True}
         raise HTTPException(409,'Order is already associated with another Checkout Session')
     expected_payment_link=os.getenv('STRIPE_PAYMENT_LINK_ID')
+    if not expected_payment_link: raise HTTPException(503,'Stripe Payment Link verification is not configured')
     checks=(
         (session.get('payment_status')=='paid','payment_not_paid'),
         (session.get('mode')=='payment','unexpected_checkout_mode'),
