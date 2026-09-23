@@ -23,11 +23,14 @@ Create or update the Stripe webhook endpoint to target:
 https://<production-domain>/webhooks/stripe
 ```
 
-Subscribe to:
+Subscribe to both payment-success events:
 
 ```text
 checkout.session.completed
+checkout.session.async_payment_succeeded
 ```
+
+The second event is required for delayed payment methods. A `checkout.session.completed` event can arrive before payment settles and is intentionally ignored until Stripe sends `checkout.session.async_payment_succeeded`.
 
 Copy that endpoint's signing secret into Vercel as `STRIPE_WEBHOOK_SECRET`. Do not use a secret from a different endpoint or environment.
 
@@ -49,7 +52,7 @@ Vercel environment-variable changes do not alter an already-built deployment. Re
 
 After merge and production deployment, complete one controlled purchase:
 
-1. Confirm Stripe shows `checkout.session.completed` delivered successfully.
+1. Confirm Stripe shows the applicable success event delivered successfully: `checkout.session.completed` for an immediately paid session, or `checkout.session.async_payment_succeeded` for a delayed payment.
 2. Confirm the order transitions from `CHECKOUT_PENDING` to `PAID`.
 3. Confirm `/success?session_id=...` unlocks the intake form.
 4. Submit intake and download the generated deliverable.
