@@ -29,6 +29,7 @@ class FakeStore:
 def setup_function(): set_store_for_tests(FakeStore())
 
 def configure_payment(monkeypatch,secret='whsec_test_secret'):
+    monkeypatch.setenv('DATABASE_URL','postgresql://configured')
     monkeypatch.setenv('STRIPE_PAYMENT_LINK_URL','https://buy.stripe.com/test')
     monkeypatch.setenv('STRIPE_PAYMENT_LINK_ID','plink_test_123')
     monkeypatch.setenv('STRIPE_WEBHOOK_SECRET',secret)
@@ -43,6 +44,14 @@ def paid_session(order_id,**overrides):
     session={'id':'cs_test_123','client_reference_id':order_id,'payment_status':'paid','mode':'payment','amount_total':4900,'currency':'usd','payment_link':'plink_test_123'}
     session.update(overrides)
     return {'type':'checkout.session.completed','data':{'object':session}}
+
+def test_checkout_fails_closed_when_payment_config_is_incomplete(monkeypatch):
+    configure_payment(monkeypatch)
+    monkeypatch.delenv('STRIPE_WEBHOOK_SECRET')
+    response=client.post('/checkout',json={'customer_email':'buyer@example.com'})
+    assert response.status_code==503
+    assert response.json()['detail']=='Checkout is not fully configured'
+
 
 def test_full_zero_cost_fulfillment(monkeypatch):
     secret='whsec_test_secret'
