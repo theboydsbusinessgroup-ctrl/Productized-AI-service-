@@ -50,8 +50,9 @@ def health():
 def offer(): return OFFER
 @app.post('/checkout',response_model=CheckoutResponse)
 def create_checkout(payload:CheckoutRequest):
+    config=payment_configuration()
+    if not all(config.values()): raise HTTPException(503,'Checkout is not fully configured')
     base=os.getenv('STRIPE_PAYMENT_LINK_URL')
-    if not base: raise HTTPException(503,'Checkout is not configured')
     order_id=f"ord_{secrets.token_urlsafe(9)}"
     try: get_store().create_order(order_id,str(payload.customer_email),49,'CHECKOUT_PENDING')
     except Exception: raise HTTPException(503,'Order storage unavailable')
