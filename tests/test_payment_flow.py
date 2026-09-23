@@ -1,4 +1,9 @@
+import json
+import time
+
+import stripe
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app.store import set_store_for_tests
 
@@ -12,6 +17,9 @@ class FakeStore:
     def mark_paid(self,order_id,stripe_session_id,intake_token):
         row=self.orders.get(order_id)
         if not row:return None
+        if row['state'] in {'PAID','DELIVERY_READY'}:
+            return row if row.get('stripe_session_id')==stripe_session_id else None
+        if row['state']!='CHECKOUT_PENDING': return None
         row.update(state='PAID',stripe_session_id=stripe_session_id,intake_token=intake_token);return row
     def save_fulfillment(self,order_id,intake,deliverable_text):
         row=self.orders.get(order_id)
@@ -19,13 +27,136 @@ class FakeStore:
         row.update(state='DELIVERY_READY',intake=intake,deliverable_text=deliverable_text);return row
 
 def setup_function(): set_store_for_tests(FakeStore())
+
+def configure_payment(monkeypatch,secret='whsec_test_secret'):
+    monkeypatch.setenv('DATABASE_URL','postgresql://configured')
+    monkeypatch.setenv('STRIPE_PAYMENT_LINK_URL','https://buy.stripe.com/test')
+    monkeypatch.setenv('STRIPE_PAYMENT_LINK_ID','plink_test_123')
+    monkeypatch.setenv('STRIPE_WEBHOOK_SECRET',secret)
+
+def signed_webhook(payload,secret):
+    body=json.dumps(payload,separators=(',',':'))
+    timestamp=int(time.time())
+    signature=stripe.WebhookSignature._compute_signature(f"{timestamp}.{body}",secret)
+    return body,{'stripe-signature':f't={timestamp},v1={signature}','content-type':'application/json'}
+
+def paid_session(order_id,**overrides):
+    session={'id':'cs_test_123','client_reference_id':order_id,'payment_status':'paid','mode':'payment','amount_total':4900,'currency':'usd','payment_link':'plink_test_123'}
+    session.update(overrides)
+    return {'type':'checkout.session.completed','data':{'object':session}}
+
+def test_checkout_fails_closed_when_payment_config_is_incomplete(monkeypatch):
+    configure_payment(monkeypatch)
+    monkeypatch.delenv('STRIPE_WEBHOOK_SECRET')
+    response=client.post('/checkout',json={'customer_email':'buyer@example.com'})
+    assert response.status_code==503
+    assert response.json()['detail']=='Checkout is not fully configured'
+
+
 def test_full_zero_cost_fulfillment(monkeypatch):
-    monkeypatch.setenv('STRIPE_PAYMENT_LINK_URL','https://buy.stripe.com/test'); monkeypatch.delenv('STRIPE_WEBHOOK_TOKEN_ENFORCED',raising=False)
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret); monkeypatch.delenv('STRIPE_WEBHOOK_TOKEN_ENFORCED',raising=False)
     c=client.post('/checkout',json={'customer_email':'buyer@example.com'}); oid=c.json()['order_id']
-    assert client.post('/webhooks/stripe',json={'type':'checkout.session.completed','data':{'object':{'id':'cs_test_123','client_reference_id':oid}}}).status_code==200
+    payload,headers=signed_webhook(paid_session(oid),secret)
+    assert client.post('/webhooks/stripe',content=payload,headers=headers).status_code==200
     h=client.get('/handoff?session_id=cs_test_123').json(); token=h['intake_token']
     r=client.post(f'/orders/{oid}/intake',headers={'x-intake-token':token},json={'business_name':'Acme','industry':'Home Services','location':'Houston','services':['Repairs']})
     assert r.status_code==200 and r.json()['state']=='DELIVERY_READY'
     d=client.get(r.json()['delivery_url'])
     assert d.status_code==200 and '30-Day Social Content Pack — Acme' in d.text and 'Day 30:' in d.text
     assert 'attachment;' in d.headers['content-disposition']
+
+
+def test_webhook_does_not_fulfill_unpaid_session(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    payload,headers=signed_webhook(paid_session(order_id,payment_status='unpaid'),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='payment_not_paid'
+    assert client.get('/handoff',params={'session_id':'cs_test_123'}).json()['state']=='PROCESSING'
+
+
+def test_webhook_does_not_fulfill_wrong_amount(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    payload,headers=signed_webhook(paid_session(order_id,amount_total=100),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='unexpected_amount'
+
+
+def test_duplicate_webhook_preserves_intake_token(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    payload,headers=signed_webhook(paid_session(order_id),secret)
+    first=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert first.status_code==200
+    first_token=client.get('/handoff',params={'session_id':'cs_test_123'}).json()['intake_token']
+    second=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert second.status_code==200
+    assert second.json()['duplicate'] is True
+    assert client.get('/handoff',params={'session_id':'cs_test_123'}).json()['intake_token']==first_token
+
+
+def test_webhook_fails_closed_without_payment_link_binding(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    monkeypatch.delenv('STRIPE_PAYMENT_LINK_ID')
+    payload,headers=signed_webhook(paid_session(order_id),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==503
+    assert response.json()['detail']=='Stripe Payment Link verification is not configured'
+
+
+def test_webhook_rejects_different_payment_link(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    payload,headers=signed_webhook(paid_session(order_id,payment_link='plink_other'),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='unexpected_payment_link'
+
+
+def test_webhook_ignores_unrelated_signed_event(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    payload,headers=signed_webhook({'type':'customer.created','data':{'object':{'id':'cus_123'}}},secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()=={'received':True,'ignored':True}
+
+
+def test_webhook_ignores_missing_client_reference_id(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    payload,headers=signed_webhook(paid_session(None),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='missing_client_reference_id'
+
+
+def test_webhook_ignores_unknown_order(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    payload,headers=signed_webhook(paid_session('ord_unknown'),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='unknown_order'
+
+
+def test_async_payment_success_marks_order_paid(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    event=paid_session(order_id)
+    event['type']='checkout.session.async_payment_succeeded'
+    payload,headers=signed_webhook(event,secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['state']=='PAID'

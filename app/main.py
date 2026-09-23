@@ -3,12 +3,13 @@ import secrets
 from enum import Enum
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from app.generator import build_content_pack
 from app.store import get_store
+from app.stripe_security import construct_verified_event
 
 app=FastAPI(title='Productized AI Service Engine',version='0.7.0')
 OFFER={'id':'social-content-pack-30d','name':'30-Day Social Content Pack','price_usd':49,'recurring_refresh_usd':29,'deliverables':['10 social posts','10 captions','10 hooks','5 promotional ideas','5 Google Business Profile posts','30-day content calendar']}
@@ -37,14 +38,21 @@ def funnel_summary(token:str):
 def landing_page():
     return HTMLResponse(r'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>30-Day Social Content Pack</title><meta name="description" content="Get 30 days of ready-to-use social content for your business for $49."><style>body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#0f1c31;color:#172033}.page{min-height:100vh;background:linear-gradient(180deg,#0f1c31 0,#162947 42%,#f7f3ea 42%,#f7f3ea 100%)}.wrap{max-width:960px;margin:auto;padding:28px 20px 60px}.hero{color:white;padding:38px 0 46px}.eyebrow{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#e2bd62;font-weight:800}.hero h1{font-size:clamp(38px,7vw,68px);line-height:.98;margin:14px 0 18px;max-width:820px}.hero p{font-size:20px;line-height:1.5;max-width:700px;color:#e8edf5}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:24px;align-items:start}.card{background:white;border-radius:22px;padding:28px;box-shadow:0 16px 50px #00000018}.price{font-size:48px;font-weight:850;margin:0}.once{color:#687386}.check{padding:0;list-style:none}.check li{padding:9px 0;border-bottom:1px solid #edf0f4}.check li:before{content:'✓';font-weight:900;margin-right:10px;color:#1b7f55}.buy{position:sticky;top:20px}.buy h2{margin-top:0}.buy p{color:#5e6878;line-height:1.5}label{display:block;font-weight:700;margin:18px 0 7px}input{width:100%;box-sizing:border-box;padding:15px;border:1px solid #cbd2dc;border-radius:11px;font-size:16px}button{width:100%;margin-top:16px;border:0;border-radius:11px;padding:16px;background:#15223a;color:white;font-size:17px;font-weight:800;cursor:pointer}.fine{font-size:12px!important;color:#7b8493!important;text-align:center}.sample{margin-top:22px;padding:18px;border:1px solid #e4e8ee;border-radius:14px;background:#fafbfc}.sample h3{margin:0 0 10px}.sample p{margin:7px 0;color:#445066;line-height:1.45}.sample .samplehook{font-weight:800;color:#15223a}.steps{margin-top:24px}.steps strong{display:block;margin-bottom:5px}.badge{display:inline-block;padding:7px 10px;border-radius:999px;background:#eef2f7;font-size:12px;font-weight:800}.error{color:#a12626;font-size:14px;margin-top:10px;min-height:20px}@media(max-width:760px){.grid{grid-template-columns:1fr}.buy{position:static}.hero{padding-top:20px}.page{background:linear-gradient(180deg,#0f1c31 0,#162947 35%,#f7f3ea 35%,#f7f3ea 100%)}}</style></head><body><div class="page"><div class="wrap"><section class="hero"><div class="eyebrow">Done-for-you content • instant delivery</div><h1 id="heroTitle">Stop wondering what to post for the next 30 days.</h1><p id="heroCopy">Answer a few questions about your business and receive a personalized social content pack immediately after checkout.</p></section><div class="grid"><section class="card"><span class="badge">30-Day Social Content Pack</span><h2>What you get</h2><ul class="check"><li>10 ready-to-use social posts</li><li>10 captions</li><li>10 scroll-stopping hooks</li><li>5 promotional campaign ideas</li><li>5 Google Business Profile posts</li><li>A 30-day posting calendar</li><li>Personalized to your business, services, audience, location and tone</li><li>Instant secure download after intake</li></ul><div class="sample"><h3>See the kind of content you’ll receive</h3><p class="samplehook">Sample hook: “3 signs your customers may need your service before they realize it.”</p><p><strong>Sample caption:</strong> Most people wait until a small problem becomes expensive. A short educational post that explains what to watch for can build trust, answer a common question, and give customers a reason to contact your business sooner.</p><p><strong>Sample promotion:</strong> Turn one core service into a simple limited-time offer with a clear benefit, deadline, and call to action—written in your brand tone.</p><p class="fine">Your purchased pack is customized to your actual business, services, audience, location, and promotions.</p></div><div class="steps"><h2>How it works</h2><p><strong>1. Purchase securely.</strong> Checkout is handled by Stripe.</p><p><strong>2. Tell us about your business.</strong> Complete the short post-payment intake.</p><p><strong>3. Download immediately.</strong> Your personalized content pack is generated and delivered on the spot.</p></div></section><aside class="card buy"><p class="price">$49</p><p class="once">One-time purchase. No subscription required.</p><h2>Get your content pack</h2><p>Enter the email you want attached to your order. We create your tracked order first, then send you to secure Stripe checkout.</p><form id="buyForm"><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" placeholder="you@business.com" required><button id="buyButton" type="submit">Get 30 Days of Content — $49</button><div id="error" class="error"></div></form><p class="fine">Secure payment via Stripe. Digital service. Review generated content for current pricing, claims and local requirements before publishing.</p></aside></div></div></div><script>const src=new URLSearchParams(location.search).get('src')||document.referrer||'direct';const s=String(src).toLowerCase();const title=document.getElementById('heroTitle'),copy=document.getElementById('heroCopy');let niche=null;if(s.includes('medspa')||s.includes('glow')||s.includes('artavi'))niche=['A month of social content for your med spa—without another agency retainer.','Stay visible between appointments with educational, promotional and trust-building content tailored to a local aesthetics practice.'];else if(s.includes('hue')||s.includes('salon')||s.includes('shine'))niche=['Keep your salon visible for the next 30 days.','Turn services, transformations, tips and promotions into a ready-to-use month of social content without adding another recurring marketing bill.'];else if(s.includes('morehands')||s.includes('clean'))niche=['30 days of content for your cleaning business—ready to post.','Stay top-of-mind with homeowners using service highlights, trust-building tips, promotions and Google Business Profile posts tailored to a local cleaning company.'];else if(s.includes('swinging')||s.includes('handyman')||s.includes('home'))niche=['Turn everyday home-service work into 30 days of useful content.','Use project ideas, maintenance tips, service highlights and promotions to stay visible to local homeowners without hiring an agency.'];else if(s.includes('smile4texas')||s.includes('dental')||s.includes('dentist'))niche=['30 days of content for your dental practice—without another agency contract.','Turn patient education, cosmetic services, FAQs and trust-building topics into a ready-to-use month of social content for your practice.'];else if(s.includes('innerme')||s.includes('fitness')||s.includes('studio'))niche=['Keep your fitness studio visible for the next 30 days.','Turn classes, coaching, member motivation, events and promotions into a ready-to-use month of social content without adding another marketing retainer.'];else if(s.includes('structured')||s.includes('foundation'))niche=['Build homeowner trust with 30 days of useful foundation content.','Turn warning signs, repair education, project explanations and seasonal homeowner tips into a ready-to-use month of content that supports estimate requests.'];if(niche){title.textContent=niche[0];copy.textContent=niche[1];}fetch('/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_type:'page_view',source:src})}).catch(()=>{});const form=document.getElementById('buyForm'),btn=document.getElementById('buyButton'),err=document.getElementById('error');form.addEventListener('submit',async e=>{e.preventDefault();err.textContent='';btn.disabled=true;btn.textContent='Preparing secure checkout…';try{const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:document.getElementById('email').value,source:src})});const d=await r.json();if(!r.ok||!d.checkout_url)throw new Error(d.detail||'Checkout could not be started.');location.href=d.checkout_url}catch(ex){err.textContent=ex.message||'Checkout could not be started. Please try again.';btn.disabled=false;btn.textContent='Get 30 Days of Content — $49'}});</script></body></html>''')
 
+def payment_configuration():
+    keys=('DATABASE_URL','STRIPE_PAYMENT_LINK_URL','STRIPE_PAYMENT_LINK_ID','STRIPE_WEBHOOK_SECRET')
+    return {key:bool(os.getenv(key)) for key in keys}
+
 @app.get('/health')
-def health(): return {'status':'ok','service':'productized-ai-service-engine','version':'0.7.0','payment_gate':True,'persistent_store':bool(os.getenv('DATABASE_URL')),'instant_fulfillment':True}
+def health():
+    config=payment_configuration()
+    return {'status':'ok','service':'productized-ai-service-engine','version':'0.7.0','payment_gate':all(config.values()),'payment_configuration':config,'persistent_store':config['DATABASE_URL'],'instant_fulfillment':True}
 @app.get('/offer')
 def offer(): return OFFER
 @app.post('/checkout',response_model=CheckoutResponse)
 def create_checkout(payload:CheckoutRequest):
+    config=payment_configuration()
+    if not all(config.values()): raise HTTPException(503,'Checkout is not fully configured')
     base=os.getenv('STRIPE_PAYMENT_LINK_URL')
-    if not base: raise HTTPException(503,'Checkout is not configured')
     order_id=f"ord_{secrets.token_urlsafe(9)}"
     try: get_store().create_order(order_id,str(payload.customer_email),49,'CHECKOUT_PENDING')
     except Exception: raise HTTPException(503,'Order storage unavailable')
@@ -53,18 +61,39 @@ def create_checkout(payload:CheckoutRequest):
     sep='&' if '?' in base else '?'
     return CheckoutResponse(order_id=order_id,state=OrderState.CHECKOUT_PENDING,amount_usd=49,checkout_url=f'{base}{sep}client_reference_id={order_id}')
 @app.post('/webhooks/stripe')
-async def stripe_webhook(event:dict,token:str|None=Query(default=None)):
+async def stripe_webhook(request:Request,token:str|None=Query(default=None)):
+    event=construct_verified_event(await request.body(),request.headers.get('stripe-signature'))
     enforce=os.getenv('STRIPE_WEBHOOK_TOKEN_ENFORCED','false').lower()=='true'
     if enforce:
         expected=os.getenv('STRIPE_WEBHOOK_TOKEN')
         if not expected or not secrets.compare_digest(token or '',expected): raise HTTPException(401,'Invalid webhook token')
-    if event.get('type')!='checkout.session.completed': return {'received':True,'ignored':True}
+    if event.get('type') not in {'checkout.session.completed','checkout.session.async_payment_succeeded'}:
+        return {'received':True,'ignored':True}
     session=event.get('data',{}).get('object',{}); order_id=session.get('client_reference_id')
-    if not order_id: raise HTTPException(400,'Missing client_reference_id')
-    try: order=get_store().mark_paid(order_id,session.get('id'),secrets.token_urlsafe(24))
+    if not order_id: return {'received':True,'ignored':True,'reason':'missing_client_reference_id'}
+    try: order=get_store().get_order(order_id)
     except Exception: raise HTTPException(503,'Order storage unavailable')
-    if not order: raise HTTPException(404,'Order not found')
-    try: get_store().log_event('paid',order_id=order_id,metadata={'stripe_session_id':session.get('id')})
+    if not order: return {'received':True,'ignored':True,'reason':'unknown_order'}
+    session_id=session.get('id')
+    if order['state'] in {'PAID','DELIVERY_READY'}:
+        if order.get('stripe_session_id')==session_id:
+            return {'received':True,'order_id':order_id,'state':order['state'],'duplicate':True}
+        raise HTTPException(409,'Order is already associated with another Checkout Session')
+    expected_payment_link=os.getenv('STRIPE_PAYMENT_LINK_ID')
+    if not expected_payment_link: raise HTTPException(503,'Stripe Payment Link verification is not configured')
+    checks=(
+        (session.get('payment_status')=='paid','payment_not_paid'),
+        (session.get('mode')=='payment','unexpected_checkout_mode'),
+        (session.get('amount_total')==order['amount_usd']*100,'unexpected_amount'),
+        (str(session.get('currency','')).lower()=='usd','unexpected_currency'),
+        (not expected_payment_link or session.get('payment_link')==expected_payment_link,'unexpected_payment_link'),
+    )
+    for valid,reason in checks:
+        if not valid: return {'received':True,'ignored':True,'reason':reason}
+    try: order=get_store().mark_paid(order_id,session_id,secrets.token_urlsafe(24))
+    except Exception: raise HTTPException(503,'Order storage unavailable')
+    if not order: raise HTTPException(409,'Order payment state changed; retry the event')
+    try: get_store().log_event('paid',order_id=order_id,metadata={'stripe_session_id':session_id})
     except Exception: pass
     return {'received':True,'order_id':order_id,'state':'PAID'}
 @app.get('/handoff')
