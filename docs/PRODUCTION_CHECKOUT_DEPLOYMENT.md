@@ -10,8 +10,7 @@ Add the following server-only variables in the Vercel project. Never prefix them
 - `STRIPE_PAYMENT_LINK_URL` — live Stripe Payment Link used by `POST /checkout`.
 - `STRIPE_PAYMENT_LINK_ID` — the matching `plink_...` identifier; webhook events from any other Payment Link are rejected.
 - `STRIPE_WEBHOOK_SECRET` — the `whsec_...` signing secret for the exact Stripe webhook endpoint below.
-- `STRIPE_WEBHOOK_TOKEN` — optional random token used by `GET /internal/funnel`.
-- `STRIPE_WEBHOOK_TOKEN_ENFORCED` — keep `false` unless Stripe is configured to include the query token in the endpoint URL.
+- `INTERNAL_API_TOKEN` — optional random token for `GET /internal/funnel`; send it only in the `X-Internal-Token` request header, never in a URL.
 
 Scope required payment variables to **Production**. Add them to Preview only when using Stripe test-mode resources and an isolated preview database.
 
@@ -32,7 +31,7 @@ checkout.session.async_payment_succeeded
 
 The second event is required for delayed payment methods. A `checkout.session.completed` event can arrive before payment settles and is intentionally ignored until Stripe sends `checkout.session.async_payment_succeeded`.
 
-Copy that endpoint's signing secret into Vercel as `STRIPE_WEBHOOK_SECRET`. Do not use a secret from a different endpoint or environment.
+Copy that endpoint's signing secret into Vercel as `STRIPE_WEBHOOK_SECRET`. Do not use a secret from a different endpoint or environment. Do not add authentication secrets to the endpoint URL; Stripe's signed request body is the webhook authenticator.
 
 ## 3. Redeploy after variable changes
 
