@@ -141,6 +141,17 @@ def test_webhook_ignores_missing_client_reference_id(monkeypatch):
     assert response.json()['reason']=='missing_client_reference_id'
 
 
+def test_webhook_ignores_missing_checkout_session_id(monkeypatch):
+    secret='whsec_test_secret'
+    configure_payment(monkeypatch,secret)
+    order_id=client.post('/checkout',json={'customer_email':'buyer@example.com'}).json()['order_id']
+    payload,headers=signed_webhook(paid_session(order_id,id=None),secret)
+    response=client.post('/webhooks/stripe',content=payload,headers=headers)
+    assert response.status_code==200
+    assert response.json()['reason']=='missing_checkout_session_id'
+    assert client.get('/handoff',params={'session_id':'cs_test_123'}).json()['state']=='PROCESSING'
+
+
 def test_webhook_ignores_unknown_order(monkeypatch):
     secret='whsec_test_secret'
     configure_payment(monkeypatch,secret)
