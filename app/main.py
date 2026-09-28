@@ -71,10 +71,11 @@ async def stripe_webhook(request:Request,token:str|None=Query(default=None)):
         return {'received':True,'ignored':True}
     session=event.get('data',{}).get('object',{}); order_id=session.get('client_reference_id')
     if not order_id: return {'received':True,'ignored':True,'reason':'missing_client_reference_id'}
+    session_id=session.get('id')
+    if not session_id: return {'received':True,'ignored':True,'reason':'missing_checkout_session_id'}
     try: order=get_store().get_order(order_id)
     except Exception: raise HTTPException(503,'Order storage unavailable')
     if not order: return {'received':True,'ignored':True,'reason':'unknown_order'}
-    session_id=session.get('id')
     if order['state'] in {'PAID','DELIVERY_READY'}:
         if order.get('stripe_session_id')==session_id:
             return {'received':True,'order_id':order_id,'state':order['state'],'duplicate':True}
