@@ -3,7 +3,7 @@ import secrets
 from enum import Enum
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, EmailStr, Field
 
@@ -29,9 +29,9 @@ def log_public_event(event:FunnelEvent):
     return {'ok':True}
 
 @app.get('/internal/funnel')
-def funnel_summary(token:str):
-    expected=os.getenv('STRIPE_WEBHOOK_TOKEN')
-    if not expected or not secrets.compare_digest(token,expected): raise HTTPException(401,'Unauthorized')
+def funnel_summary(x_internal_token:str|None=Header(default=None)):
+    expected=os.getenv('INTERNAL_API_TOKEN') or os.getenv('STRIPE_WEBHOOK_TOKEN')
+    if not expected or not secrets.compare_digest(x_internal_token or '',expected): raise HTTPException(401,'Unauthorized')
     return get_store().funnel_summary()
 
 @app.get('/', response_class=HTMLResponse)
@@ -65,12 +65,8 @@ def create_checkout(payload:CheckoutRequest):
     sep='&' if '?' in base else '?'
     return CheckoutResponse(order_id=order_id,state=OrderState.CHECKOUT_PENDING,amount_usd=49,checkout_url=f'{base}{sep}client_reference_id={order_id}')
 @app.post('/webhooks/stripe')
-async def stripe_webhook(request:Request,token:str|None=Query(default=None)):
+async def stripe_webhook(request:Request):
     event=construct_verified_event(await request.body(),request.headers.get('stripe-signature'))
-    enforce=os.getenv('STRIPE_WEBHOOK_TOKEN_ENFORCED','false').lower()=='true'
-    if enforce:
-        expected=os.getenv('STRIPE_WEBHOOK_TOKEN')
-        if not expected or not secrets.compare_digest(token or '',expected): raise HTTPException(401,'Invalid webhook token')
     if event.get('type') not in {'checkout.session.completed','checkout.session.async_payment_succeeded'}:
         return {'received':True,'ignored':True}
     session=event.get('data',{}).get('object',{}); order_id=session.get('client_reference_id')
