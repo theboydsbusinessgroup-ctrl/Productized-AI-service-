@@ -41,7 +41,7 @@ Vercel environment-variable changes do not alter an already-built deployment. Re
 ## 4. Pre-merge verification
 
 - CI must pass on the exact PR head.
-- `GET /health` returns HTTP 200 and reports `payment_gate: true` only when every required payment setting is present.
+- `GET /health` returns HTTP 200 and reports `payment_gate: true` only when every required payment setting is present and a database round-trip succeeds (`database_reachable: true`).
 - An unsigned `POST /webhooks/stripe` request is rejected with HTTP 400.
 - A malformed `Stripe-Signature` is rejected with HTTP 400.
 - If `STRIPE_WEBHOOK_SECRET` or `STRIPE_PAYMENT_LINK_ID` is absent, the route fails closed with HTTP 503.
