@@ -25,3 +25,6 @@ def test_success_page_is_mobile_instant_fulfillment_handoff():
     assert 'Generate my content pack' in r.text
     assert 'Download your content pack' in r.text
     assert 'viewport' in r.text
+    assert r"split(/\n|,/)" in r.text
+    assert "document.getElementById('business_name')" not in r.text
+    assert "const value=id=>document.getElementById(id).value" in r.text
