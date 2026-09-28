@@ -7,6 +7,11 @@ from psycopg.rows import dict_row
 class PostgresOrderStore:
     def __init__(self,database_url:str): self.database_url=database_url
     def _connect(self): return psycopg.connect(self.database_url,row_factory=dict_row,connect_timeout=10)
+    def healthcheck(self)->bool:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute('select 1')
+                return cur.fetchone() is not None
     def create_order(self,order_id:str,customer_email:str,amount_usd:int,state:str)->dict[str,Any]:
         with self._connect() as conn:
             with conn.cursor() as cur:
