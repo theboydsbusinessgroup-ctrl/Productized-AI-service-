@@ -1,8 +1,15 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.store import set_store_for_tests
 
 client=TestClient(app)
+
+class HealthStore:
+    def __init__(self,reachable=True): self.reachable=reachable
+    def healthcheck(self): return self.reachable
+
+def setup_function(): set_store_for_tests(HealthStore())
 
 
 def configure_payment(monkeypatch):
@@ -20,6 +27,17 @@ def test_health_reports_ready_only_when_payment_is_configured(monkeypatch):
     assert data['instant_fulfillment'] is True
     assert data['version']=='0.7.0'
     assert data['payment_gate'] is True
+    assert data['database_reachable'] is True
+    assert all(data['payment_configuration'].values())
+
+
+def test_health_fails_payment_gate_when_database_is_unreachable(monkeypatch):
+    configure_payment(monkeypatch)
+    set_store_for_tests(HealthStore(reachable=False))
+    data=client.get('/health').json()
+    assert data['status']=='ok'
+    assert data['payment_gate'] is False
+    assert data['database_reachable'] is False
     assert all(data['payment_configuration'].values())
 
 
