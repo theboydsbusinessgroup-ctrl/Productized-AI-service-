@@ -45,7 +45,11 @@ def payment_configuration():
 @app.get('/health')
 def health():
     config=payment_configuration()
-    return {'status':'ok','service':'productized-ai-service-engine','version':'0.7.0','payment_gate':all(config.values()),'payment_configuration':config,'persistent_store':config['DATABASE_URL'],'instant_fulfillment':True}
+    database_reachable=False
+    if config['DATABASE_URL']:
+        try: database_reachable=get_store().healthcheck()
+        except Exception: database_reachable=False
+    return {'status':'ok','service':'productized-ai-service-engine','version':'0.7.0','payment_gate':all(config.values()) and database_reachable,'payment_configuration':config,'persistent_store':config['DATABASE_URL'],'database_reachable':database_reachable,'instant_fulfillment':True}
 @app.get('/offer')
 def offer(): return OFFER
 @app.post('/checkout',response_model=CheckoutResponse)
