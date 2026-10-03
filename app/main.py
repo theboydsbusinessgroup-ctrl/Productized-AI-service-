@@ -13,6 +13,15 @@ from app.stripe_security import construct_verified_event
 
 app = FastAPI(title="Productized AI Service Engine", version="0.7.0")
 
+
+@app.middleware("http")
+async def protect_order_responses(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path in {"/handoff", "/success", "/internal/funnel", "/checkout"} or request.url.path.startswith("/orders/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
 OFFER = {
     "id": "social-content-pack-30d",
     "name": "30-Day Social Content Pack",
@@ -273,10 +282,13 @@ def submit_intake(order_id: str, intake: Intake, x_intake_token: str | None = He
         raise HTTPException(503, "Order storage unavailable")
     if not order:
         raise HTTPException(404, "Order not found")
+    if not order.get("intake_token") or not secrets.compare_digest((x_intake_token or "").encode(), order["intake_token"].encode()):
+        raise HTTPException(401, "Invalid intake token")
+    delivery_url = f"/orders/{order_id}/deliverable?token={x_intake_token}"
+    if order["state"] == "DELIVERY_READY":
+        return {"order_id": order_id, "state": "DELIVERY_READY", "accepted": True, "delivery_url": delivery_url}
     if order["state"] != "PAID":
         raise HTTPException(409, "Order is not awaiting intake")
-    if not order.get("intake_token") or x_intake_token != order["intake_token"]:
-        raise HTTPException(401, "Invalid intake token")
 
     pack = build_content_pack(intake.model_dump(), order_id)
     try:
@@ -284,17 +296,18 @@ def submit_intake(order_id: str, intake: Intake, x_intake_token: str | None = He
     except Exception:
         raise HTTPException(503, "Fulfillment storage unavailable")
     if not saved:
-        raise HTTPException(404, "Order not found")
+        raise HTTPException(409, "Order is no longer awaiting fulfillment")
 
     try:
-        get_store().log_event("delivery_ready", order_id=order_id)
+        if saved.get("_fulfillment_created", True):
+            get_store().log_event("delivery_ready", order_id=order_id)
     except Exception:
         pass
     return {
         "order_id": order_id,
         "state": "DELIVERY_READY",
         "accepted": True,
-        "delivery_url": f"/orders/{order_id}/deliverable?token={x_intake_token}",
+        "delivery_url": delivery_url,
     }
 
 
@@ -310,7 +323,7 @@ def deliverable(order_id: str, token: str):
         raise HTTPException(409, "Deliverable is not ready")
 
     safe = "".join(
-        c if c.isalnum() or c in "-_" else "-"
+        c if c.isascii() and (c.isalnum() or c in "-_") else "-"
         for c in (order.get("intake") or {}).get("business_name", "content-pack")
     ).strip("-") or "content-pack"
     return PlainTextResponse(
