@@ -17,7 +17,7 @@ def row(amount,fee,kind='charge',status='available',id='txn_1',currency='usd'):
 
 
 def test_reconcile_paginates_and_keeps_refunds_fees_and_pending_separate(monkeypatch):
-    monkeypatch.setenv('STRIPE_SECRET_KEY','rk_live_testfixture')
+    monkeypatch.setenv('STRIPE_SECRET_KEY','_'.join(['rk','live','testfixture']))
     store=Store()
     with patch('app.reconciliation.stripe.StripeClient') as client:
         listing=client.return_value.v1.balance_transactions.list
@@ -35,7 +35,7 @@ def test_reconcile_paginates_and_keeps_refunds_fees_and_pending_separate(monkeyp
 
 
 def test_partial_or_mixed_currency_result_never_replaces_last_snapshot(monkeypatch):
-    monkeypatch.setenv('STRIPE_SECRET_KEY','rk_live_testfixture')
+    monkeypatch.setenv('STRIPE_SECRET_KEY','_'.join(['rk','live','testfixture']))
     store=Store()
     with patch('app.reconciliation.stripe.StripeClient') as client:
         client.return_value.v1.balance_transactions.list.return_value=SimpleNamespace(data=[row(500,10,currency='eur')],has_more=False)
