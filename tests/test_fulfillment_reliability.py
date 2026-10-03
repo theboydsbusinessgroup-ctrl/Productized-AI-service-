@@ -23,6 +23,17 @@ class Store:
         pass
 
 
+    def enqueue_fulfillment(self,order_id,intake):
+        self.job={'order_id':order_id,'intake':intake}
+    def claim_fulfillment(self,order_id=None):
+        return getattr(self,'job',None)
+    def complete_fulfillment(self,job,text):
+        self.save_fulfillment(job['order_id'],job['intake'],text)
+        self.job=None
+        return True
+    def fail_fulfillment(self,job,retryable):
+        pass
+
 def test_authenticated_retry_returns_original_deliverable():
     store = Store()
     set_store_for_tests(store)

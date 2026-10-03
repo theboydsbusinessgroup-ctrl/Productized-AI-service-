@@ -1,0 +1,4 @@
+# Exact historical fake-key fixtures; not real credentials. Current tests construct
+# the dummy prefix at runtime. Keep all other paths, commits and secrets scanned.
+48586299ab576a5bc1a20e94474ff36688c62fd5:tests/test_reconciliation.py:stripe-access-token:20
+48586299ab576a5bc1a20e94474ff36688c62fd5:tests/test_reconciliation.py:stripe-access-token:38

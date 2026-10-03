@@ -25,7 +25,7 @@ def test_health_reports_ready_only_when_payment_is_configured(monkeypatch):
     assert data['status']=='ok'
     assert data['persistent_store'] is True
     assert data['instant_fulfillment'] is True
-    assert data['version']=='0.7.0'
+    assert data['version']=='0.8.0'
     assert data['payment_gate'] is True
     assert data['database_reachable'] is True
     assert all(data['payment_configuration'].values())

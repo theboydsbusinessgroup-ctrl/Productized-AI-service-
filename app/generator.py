@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 
@@ -15,6 +16,7 @@ def build_content_pack(intake: dict[str, Any], order_id: str) -> str:
     services=[str(x).strip() for x in intake.get('services',[]) if str(x).strip()]
     promotions=[str(x).strip() for x in intake.get('promotions',[]) if str(x).strip()]
     platforms=[str(x).strip() for x in intake.get('platforms',[]) if str(x).strip()] or ['Instagram','Facebook']
+    instructions=_clean(intake.get('instructions'), 'No additional instructions supplied.')
     service=services[0] if services else f'{industry} services'
     service_list=', '.join(services) if services else service
     promo=promotions[0] if promotions else 'your current offer or preferred call to action'
@@ -74,12 +76,33 @@ def build_content_pack(intake: dict[str, Any], order_id: str) -> str:
         f'If you are looking for {service} in {location}, make your decision based on fit, clarity, and realistic expectations. Contact {business} to get started.',
     ]
 
+    # Use every requested service and supported tone rather than one repeated service.
+    lead = {'friendly': 'Let’s make this easier.', 'casual': 'Here’s a practical starting point.',
+            'professional': 'A useful planning step:', 'playful': 'A little planning goes a long way.'}
+    tone_lead = next((text for key,text in lead.items() if key in tone.lower()), 'Start with a clear plan.')
+    for index in range(len(posts)):
+        selected = services[index % len(services)] if services else service
+        posts[index] = tone_lead + ' ' + posts[index].replace(service, selected)
+        hooks[index] = hooks[index].replace(service, selected)
+        captions[index] = captions[index].replace(service, selected)
+    if promotions:
+        promo_ideas = [f'Campaign {i+1}: feature the customer-supplied offer “{p}” for {business}. Verify its terms and availability before posting.' for i,p in enumerate(promotions)]
+        while len(promo_ideas) < 5:
+            promo_ideas.append(f'Campaign {len(promo_ideas)+1}: answer a common question about {services[len(promo_ideas)%len(services)] if services else service} and invite {target} to contact {business}.')
+        promo_ideas = promo_ideas[:5]
+    if re.search(r'\b(no|avoid|without|do not use|don.t use)\s+(hashtags?|hash tags?)', instructions, re.I):
+        captions = [re.sub(r'\s*#\w+', '', text) for text in captions]
+    if re.search(r'\b(no|avoid|without|do not offer|don.t offer)\s+(discounts?|promotions?)', instructions, re.I):
+        promo_ideas = [f'Campaign {i+1}: explain what to ask about {services[i%len(services)] if services else service}; invite an inquiry without discounts, urgency, or price promises.' for i in range(5)]
+
+
     calendar_types=['Educational post','Hook + short caption','FAQ post','Google Business Profile post','Behind-the-scenes post','Offer / CTA','Trust-building post','Local post','Myth-busting post','Decision checklist']
     calendar=[]
     for day in range(1,31):
         kind=calendar_types[(day-1)%len(calendar_types)]
         platform=platforms[(day-1)%len(platforms)]
-        calendar.append(f'Day {day}: {kind} on {platform}')
+        reference = f'Social Post {(day-1)%10+1}' if day % 3 != 0 else f'GBP Post {(day-1)%5+1}'
+        calendar.append(f'Day {day}: {kind} on {platform} — use {reference}; pair with Hook {(day-1)%10+1} and Caption {(day-1)%10+1}.')
 
     lines=[
         f'# 30-Day Social Content Pack — {business}',
@@ -90,6 +113,12 @@ def build_content_pack(intake: dict[str, Any], order_id: str) -> str:
         f'Location: {location}',
         f'Tone requested: {tone}',
         f'Primary services: {service_list}',
+        '',
+        '## Your publishing brief',
+        f'Website: {_clean(intake.get("website"), "Not supplied")}',
+        f'Platforms: {", ".join(platforms)}',
+        f'Additional instructions: {instructions}',
+        'Generation method: structured draft templates using your intake. No website research or external fact verification was performed. Free-form instructions are retained in this brief for review; supported no-hashtag/no-discount constraints are applied automatically.',
         '',
         '> Publishing note: Review every post for current pricing, availability, claims, and local requirements before publishing. Replace any offer language with verified terms.',
         '',

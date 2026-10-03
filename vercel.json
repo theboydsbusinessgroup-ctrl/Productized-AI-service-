@@ -1,3 +1,4 @@
 {
-  "framework": "fastapi"
+  "framework": "fastapi",
+  "crons": [{"path":"/internal/automation","schedule":"0 6 * * *"}]
 }
