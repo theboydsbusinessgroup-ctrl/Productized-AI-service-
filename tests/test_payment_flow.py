@@ -14,7 +14,7 @@ class FakeStore:
         row={'order_id':order_id,'customer_email':customer_email,'amount_usd':amount_usd,'state':state,'intake_token':None,'stripe_session_id':None,'intake':None,'deliverable_text':None}; self.orders[order_id]=row; return row
     def get_order(self,order_id): return self.orders.get(order_id)
     def get_order_by_session(self,session_id): return next((r for r in self.orders.values() if r.get('stripe_session_id')==session_id),None)
-    def mark_paid(self,order_id,stripe_session_id,intake_token):
+    def mark_paid(self,order_id,stripe_session_id,intake_token,event=None):
         row=self.orders.get(order_id)
         if not row:return None
         if row['state'] in {'PAID','DELIVERY_READY'}:
@@ -25,6 +25,17 @@ class FakeStore:
         row=self.orders.get(order_id)
         if not row:return None
         row.update(state='DELIVERY_READY',intake=intake,deliverable_text=deliverable_text);return row
+
+    def enqueue_fulfillment(self,order_id,intake):
+        self.job={'order_id':order_id,'intake':intake}
+    def claim_fulfillment(self,order_id=None):
+        return getattr(self,'job',None)
+    def complete_fulfillment(self,job,text):
+        self.save_fulfillment(job['order_id'],job['intake'],text)
+        self.job=None
+        return True
+    def fail_fulfillment(self,job,retryable):
+        pass
 
 def setup_function(): set_store_for_tests(FakeStore())
 
@@ -43,7 +54,7 @@ def signed_webhook(payload,secret):
 def paid_session(order_id,**overrides):
     session={'id':'cs_test_123','client_reference_id':order_id,'payment_status':'paid','mode':'payment','amount_total':4900,'currency':'usd','payment_link':'plink_test_123'}
     session.update(overrides)
-    return {'type':'checkout.session.completed','data':{'object':session}}
+    return {'id':'evt_test_123','livemode':False,'type':'checkout.session.completed','data':{'object':session}}
 
 def test_checkout_fails_closed_when_payment_config_is_incomplete(monkeypatch):
     configure_payment(monkeypatch)
@@ -171,3 +182,4 @@ def test_async_payment_success_marks_order_paid(monkeypatch):
     response=client.post('/webhooks/stripe',content=payload,headers=headers)
     assert response.status_code==200
     assert response.json()['state']=='PAID'
+
