@@ -1,6 +1,6 @@
 # Consultation operations
 
-This guide describes the implementation in `app/consultations.py` and `app/consultation_store.py`. It does not assert that the production configuration, callbacks or customer flow are activated. Verify those separately before publishing the offer.
+This guide describes the 13 implemented endpoints in `app/consultations.py` and their private state in `app/consultation_store.py`. It does not assert that the production configuration, callbacks or customer flow are activated. Verify those separately before publishing the offer.
 
 The offer is a separate $19 USD, 20-minute virtual session for verified purchasers of the $9 One Bottle at a Time ebook. BARBUYER identifies the offer; it is neither purchase proof nor a discount coupon. Payment precedes consultation setup. Eric manually approves the exact appointment time. A paid receipt does not reserve a time or confirm a booking.
 
@@ -37,6 +37,7 @@ All routes are relative to `https://productized-ai-service.vercel.app`.
 | `GET /consultations/success?session_id=<private-session-id>` | Buyer return page. Polls handoff and enables time proposals only after matched payment evidence. |
 | `GET /consultations/handoff?session_id=<private-session-id>` | Treat the session ID as a private capability. Returns a buyer intake token only for eligible, valid paid states. Unknown sessions are `PROCESSING`; unresolved payment/eligibility is not ready. BOOKED/COMPLETED do not reopen proposals. |
 | `POST /consultations/{request_id}/times` | `x-consultation-token` header. JSON `slots` contains 1–10 objects with `start_datetime`, `end_datetime`, `timezone`. Replaces proposals, increments the revision and invalidates previous approval. Returns `booking_confirmed: false`. |
+| `GET /consultations/internal/gumroad-status` | Admin header. Verifies real seller API authentication through the first `/v2/sales` page filtered by the configured product, using the protected Bearer token, a three-second deadline and no redirects. Returns only `authenticated`, `product_scoped` and `successful_sale_count`; no buyer data or credential. The count covers this first page only, not lifetime sales. Missing configuration, failed upstream authentication, malformed data or cross-product results return 503; unauthorized operators receive 401. |
 | `GET /consultations/internal/requests` | Admin header. Returns `requests` and `unresolved_payments`, each capped at 100, ordered oldest first. These contain private customer/payment information. |
 | `POST /consultations/internal/{request_id}/approve` | Admin header. Fields: current `revision`, exact proposed slot fields, `calendar_available: true`, and offset-bearing `calendar_checked_at`. The successful conflict check must be no more than five minutes old. The approved slot must exactly match a current proposal. Returns `booking_confirmed: false`. |
 | `POST /consultations/internal/{request_id}/calendar-confirmation` | Admin header. Fields: current `revision`, exact approved slot fields, `calendar_event_id`, configured `calendar_id`, and `provider_result_verified: true`. Records the authenticated operator's verified provider result; it does not retrieve or create the event. Returns BOOKED only when stored approval, payment, purchase and identifiers satisfy the gates. |
@@ -74,6 +75,8 @@ Publish the consultation landing URL, not the raw Payment Link. A raw link can b
 A matched payment grants PAID_AWAITING_SCHEDULING. The buyer's private return page obtains the intake token and submits proposed times. Signed refund/dispute events revoke payment entitlement and invalidate slot approval; Gumroad eligibility revocation leaves an already-paid session awaiting resolution. Existing external calendar events are not automatically cancelled by either path. Review the actual provider state before further service or confirmation.
 
 ## Daily owner check and appointment handling
+
+After configuring or rotating the protected Gumroad access token, call `GET /consultations/internal/gumroad-status` with `x-consultation-admin-token` to verify real upstream authentication without extracting or displaying the token. A successful empty product-filtered response can verify authentication with `successful_sale_count: 0`; this is not a lifetime zero-sales claim or proof of a buyer transaction. Missing/invalid credentials keep this check unavailable and checkout activation pending.
 
 Check the protected queue **daily**, using connected tools that support authenticated HTTPS and the actual connected calendar/provider records. Keep token values and queue contents in private tool context; do not post them to a public operating board. No owner notification, email alert or daily queue reader is implemented by this backend, so the operator must initiate this check or explicitly build an additional automation.
 
