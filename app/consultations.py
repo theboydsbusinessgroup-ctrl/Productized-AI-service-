@@ -18,6 +18,12 @@ router = APIRouter(prefix='/consultations', tags=['consultations'])
 PRICE_CENTS = 1900
 DURATION_MINUTES = 20
 PAID_STATES = {'PAID_AWAITING_SCHEDULING', 'TIMES_PROPOSED', 'APPROVED_AWAITING_CALENDAR'}
+PAYMENT_SETTING_NAMES = (
+    'DATABASE_URL', 'CONSULTATION_PAYMENT_LINK_URL', 'CONSULTATION_PAYMENT_LINK_ID',
+    'CONSULTATION_STRIPE_WEBHOOK_SECRET', 'CONSULTATION_GUMROAD_PRODUCT_ID',
+    'CONSULTATION_GUMROAD_WEBHOOK_TOKEN', 'CONSULTATION_GUMROAD_ACCESS_TOKEN',
+    'CONSULTATION_ADMIN_TOKEN',
+)
 
 
 def _product_id():
@@ -100,23 +106,26 @@ class CalendarConfirmation(Slot):
     provider_result_verified: StrictBool
 
 
-LANDING_HTML = r'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your home-bar session | Behind The Bar</title><style>body{font:17px system-ui;background:#101c2c;color:#182334;margin:0}.wrap{max-width:660px;margin:auto;padding:30px 18px}.card{background:#fffdf7;padding:30px;border-radius:20px}h1{font-size:38px;line-height:1.1}.price{font-size:30px;font-weight:800}p,li{line-height:1.6}a{color:#145b86}label{display:block;margin-top:18px;font-weight:700}input,button{font:inherit;box-sizing:border-box;width:100%;padding:13px;border-radius:9px;border:1px solid #b6bfca}button{margin-top:20px;background:#182334;color:white;font-weight:800;cursor:pointer}.terms{font-size:14px;font-weight:400}.terms input{width:auto;margin-right:8px}.small{font-size:14px;color:#526172}#error{color:#9a2525}</style></head><body><main class="wrap"><div class="card"><p>BEHIND THE BAR · EBOOK BUYER OFFER</p><h1>Build a home bar that works for you.</h1><p class="price">$19 · 20-minute virtual session</p><p>Bring your bottle list and recipe questions. We can work through your shopping plan, measuring and equipment. Drinking is not required.</p><p>For verified buyers of <em>One Bottle at a Time</em>. One session per qualifying purchase, purchased separately from the $9 ebook. <a href="https://boydsbusiness.gumroad.com/l/yknubt">Get the $9 ebook</a>.</p><ol><li>Verify your ebook purchase and pay securely through Stripe.</li><li>After successful payment, propose any future date and time.</li><li>Eric approves the exact slot before a calendar invitation is arranged.</li></ol><p>Payment buys your session; it does not reserve a time. If Eric cannot provide it, choose an approved replacement time or a full $19 session refund. Rescheduling does not require another session payment.</p><form id="buy"><label for="email">Your ebook purchase email</label><input id="email" type="email" autocomplete="email" required><label for="order">Ebook order ID</label><input id="order" maxlength="200" required><p class="small">Use the private order ID from your Gumroad receipt. BARBUYER identifies this offer and is not proof of purchase. Keep receipts private.</p><label class="terms"><input id="terms" type="checkbox" required>I accept: payment is required before scheduling; Eric approves the date and time; changing a slot needs fresh approval. If a paid session cannot be provided, I may choose an approved replacement or a full session-fee refund. For buyer cancellations/no-shows, contact us to request rescheduling.</label><button id="button">Pay $19 securely</button><p id="error" role="alert"></p></form><p class="small">Adults of legal drinking age. Ingredients and equipment are not included. Help: theboydsbusinessgroup@gmail.com</p></div></main><script>document.getElementById('buy').addEventListener('submit',async e=>{e.preventDefault();const b=document.getElementById('button'),err=document.getElementById('error');b.disabled=true;err.textContent='';try{const r=await fetch('/consultations/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:document.getElementById('email').value,ebook_order_id:document.getElementById('order').value,code:'BARBUYER',terms_accepted:document.getElementById('terms').checked})});const d=await r.json();if(!r.ok)throw Error(d.detail||'Checkout could not be prepared');location.href=d.checkout_url}catch(ex){err.textContent=typeof ex.message==='string'?ex.message:'Please contact support to verify your purchase.';b.disabled=false}});</script></body></html>'''
+LANDING_HTML = r'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your home-bar session | Behind The Bar</title><style>body{font:17px system-ui;background:#101c2c;color:#182334;margin:0}.wrap{max-width:660px;margin:auto;padding:30px 18px}.card{background:#fffdf7;padding:30px;border-radius:20px}h1{font-size:38px;line-height:1.1}.price{font-size:30px;font-weight:800}p,li{line-height:1.6}a{color:#145b86}label{display:block;margin-top:18px;font-weight:700}input,button{font:inherit;box-sizing:border-box;width:100%;padding:13px;border-radius:9px;border:1px solid #b6bfca}button{margin-top:20px;background:#182334;color:white;font-weight:800;cursor:pointer}button[disabled]{opacity:.65;cursor:default}.terms{font-size:14px;font-weight:400}.terms input{width:auto;margin-right:8px}.small{font-size:14px;color:#526172}#error{color:#9a2525}</style></head><body><main class="wrap"><div class="card"><p>BEHIND THE BAR · EBOOK BUYER OFFER</p><h1>Build a home bar that works for you.</h1><p class="price">$19 · 20-minute virtual session</p><p>Bring your bottle list and recipe questions. We can work through your shopping plan, measuring and equipment. Drinking is not required.</p><p>For verified buyers of <em>One Bottle at a Time</em>. One session per qualifying purchase, purchased separately from the $9 ebook. <a href="https://boydsbusiness.gumroad.com/l/yknubt">Get the $9 ebook</a>.</p><ol><li>Verify your ebook purchase and pay securely through Stripe.</li><li>After successful payment, propose any future date and time.</li><li>Eric approves the exact slot before a calendar invitation is arranged.</li></ol><p>Payment buys your session; it does not reserve a time. If Eric cannot provide it, choose an approved replacement time or a full $19 session refund. Rescheduling does not require another session payment.</p><form id="buy" data-checkout-ready="true"><label for="email">Your ebook purchase email</label><input id="email" type="email" autocomplete="email" required><label for="order">Ebook order ID</label><input id="order" maxlength="200" required><p class="small">Use the private order ID from your Gumroad receipt. BARBUYER identifies this offer and is not proof of purchase. Keep receipts private.</p><label class="terms"><input id="terms" type="checkbox" required>I accept: payment is required before scheduling; Eric approves the date and time; changing a slot needs fresh approval. If a paid session cannot be provided, I may choose an approved replacement or a full session-fee refund. For buyer cancellations/no-shows, contact us to request rescheduling.</label><button id="button">Pay $19 securely</button><p id="error" role="alert"></p></form><p class="small">Adults of legal drinking age. Ingredients and equipment are not included. Help: theboydsbusinessgroup@gmail.com</p></div></main><script>document.getElementById('buy').addEventListener('submit',async e=>{e.preventDefault();if(e.currentTarget.dataset.checkoutReady!=='true')return;const b=document.getElementById('button'),err=document.getElementById('error');b.disabled=true;err.textContent='';try{const r=await fetch('/consultations/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_email:document.getElementById('email').value,ebook_order_id:document.getElementById('order').value,code:'BARBUYER',terms_accepted:document.getElementById('terms').checked})});const d=await r.json();if(!r.ok)throw Error(d.detail||'Checkout could not be prepared');location.href=d.checkout_url}catch(ex){err.textContent=typeof ex.message==='string'?ex.message:'Please contact support to verify your purchase.';b.disabled=false}});</script></body></html>'''
 
 SUCCESS_HTML = r'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose your preferred time | Behind The Bar</title><style>body{font:17px system-ui;background:#f7f3ea;color:#182334;margin:0}.wrap{max-width:600px;margin:auto;padding:28px}label{display:block;margin:18px 0 7px}input,button{font:inherit;width:100%;padding:12px;box-sizing:border-box}button{margin-top:22px;background:#182334;color:white;border:0;border-radius:9px}#form{display:none}p{line-height:1.6}</style></head><body><main class="wrap"><h1>Your virtual home-bar session</h1><p id="status" role="status">Checking your payment. Scheduling opens after Stripe confirms successful payment.</p><form id="form"><label for="start">Preferred date and start time</label><input id="start" type="datetime-local" required><label for="zone">Your timezone</label><input id="zone" readonly required><p>Choose any future time. Eric must approve the exact slot. Submitting a request does not reserve the time or create a meeting invitation.</p><button>Send preferred time for approval</button></form><p>If Eric cannot provide your paid session, choose an approved replacement or a full $19 session refund. Help: theboydsbusinessgroup@gmail.com</p></main><script>let requestId='',token='';const sid=new URLSearchParams(location.search).get('session_id'),statusEl=document.getElementById('status'),form=document.getElementById('form');const localZone=Intl.DateTimeFormat().resolvedOptions().timeZone;document.getElementById('zone').value=localZone;let tries=0;async function poll(){if(!sid){statusEl.textContent='Missing payment reference. Contact support with your Stripe receipt privately.';return}try{const r=await fetch('/consultations/handoff?session_id='+encodeURIComponent(sid),{cache:'no-store'});if(!r.ok)throw Error('Cannot check payment');const d=await r.json();if(d.state==='BOOKED'||d.state==='COMPLETED'){form.style.display='none';statusEl.textContent=d.state==='COMPLETED'?'Your session is completed. Thank you.':'Your session is confirmed.';if(d.approved_slot&&d.approved_slot.start_datetime){const when=new Date(d.approved_slot.start_datetime);if(!isNaN(when))statusEl.textContent+=' '+when.toLocaleString(undefined,{timeZone:d.approved_slot.timezone,timeZoneName:'short'})}return}if(d.ready){requestId=d.request_id;token=d.intake_token;statusEl.textContent=d.state==='APPROVED_AWAITING_CALENDAR'?'Eric approved your proposed slot. The calendar invitation is still pending.':'Payment verified. Propose a time for Eric to approve.';form.style.display='block';return}statusEl.textContent=d.state==='PROCESSING'?'Waiting for Stripe payment verification. If this continues, contact support with your receipt privately.':'Your payment or ebook eligibility needs review. Please contact support.';if(d.state!=='PROCESSING')return}catch(e){statusEl.textContent='Unable to check payment yet. Please retry or contact support.'}if(++tries<30)setTimeout(poll,2000)}form.addEventListener('submit',async e=>{e.preventDefault();try{if(document.getElementById('zone').value!==localZone)throw Error('Set the time using your device timezone: '+localZone);const start=new Date(document.getElementById('start').value),end=new Date(start.getTime()+20*60000);const pad=n=>String(n).padStart(2,'0');function stamp(d){const off=-d.getTimezoneOffset();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())+':00'+(off<0?'-':'+')+pad(Math.floor(Math.abs(off)/60))+':'+pad(Math.abs(off)%60)}const r=await fetch('/consultations/'+encodeURIComponent(requestId)+'/times',{method:'POST',headers:{'Content-Type':'application/json','x-consultation-token':token},body:JSON.stringify({slots:[{start_datetime:stamp(start),end_datetime:stamp(end),timezone:localZone}]})});const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'Please check the date and timezone');statusEl.textContent='Preferred time received. Eric will review it; your session is not confirmed yet.';form.style.display='none'}catch(e){statusEl.textContent=e.message}});poll();</script></body></html>'''
 
 
 @router.get('', response_class=HTMLResponse)
 def landing():
-    return HTMLResponse(LANDING_HTML)
+    html = LANDING_HTML
+    if not all(os.getenv(name) for name in PAYMENT_SETTING_NAMES):
+        html = html.replace('data-checkout-ready="true"', 'data-checkout-ready="false"')
+        html = html.replace('<button id="button">', '<button id="button" disabled>')
+        html = html.replace('<p id="error" role="alert"></p>',
+                            '<p id="error" role="status">Session checkout is temporarily unavailable. '
+                            'Please check back or contact support.</p>')
+    return HTMLResponse(html)
 
 
 @router.get('/health')
 def health():
-    names = ('DATABASE_URL', 'CONSULTATION_PAYMENT_LINK_URL', 'CONSULTATION_PAYMENT_LINK_ID',
-             'CONSULTATION_STRIPE_WEBHOOK_SECRET', 'CONSULTATION_GUMROAD_PRODUCT_ID',
-             'CONSULTATION_GUMROAD_WEBHOOK_TOKEN', 'CONSULTATION_GUMROAD_ACCESS_TOKEN',
-             'CONSULTATION_ADMIN_TOKEN')
-    configured = {key: bool(os.getenv(key)) for key in names}
+    configured = {key: bool(os.getenv(key)) for key in PAYMENT_SETTING_NAMES}
     reachable = False
     if configured['DATABASE_URL']:
         try:
@@ -133,11 +142,7 @@ def health():
 def checkout(payload: Checkout):
     if not payload.terms_accepted or payload.code.upper() != 'BARBUYER':
         raise HTTPException(422, 'Accept the session terms and use offer code BARBUYER')
-    names = ('DATABASE_URL', 'CONSULTATION_PAYMENT_LINK_URL', 'CONSULTATION_PAYMENT_LINK_ID',
-             'CONSULTATION_STRIPE_WEBHOOK_SECRET', 'CONSULTATION_GUMROAD_PRODUCT_ID',
-             'CONSULTATION_GUMROAD_WEBHOOK_TOKEN', 'CONSULTATION_GUMROAD_ACCESS_TOKEN',
-             'CONSULTATION_ADMIN_TOKEN')
-    if not all(os.getenv(name) for name in names):
+    if not all(os.getenv(name) for name in PAYMENT_SETTING_NAMES):
         raise HTTPException(503, 'Consultation checkout is not configured')
     base = os.environ['CONSULTATION_PAYMENT_LINK_URL']
     parsed = urlsplit(base)
@@ -296,6 +301,47 @@ def _api_flag(sale: dict, name: str):
     return value
 
 
+def _successful_sales_response(response: httpx.Response):
+    """Require a successful seller API response and a well-formed sales list."""
+    response.raise_for_status()
+    body = response.json()
+    if (not isinstance(body, dict) or body.get('success') is not True
+            or not isinstance(body.get('sales'), list)
+            or any(not isinstance(sale, dict) for sale in body['sales'])):
+        raise ValueError('Provider successful-sale state not verified')
+    return body['sales']
+
+
+@router.get('/internal/gumroad-status')
+async def gumroad_status(x_consultation_admin_token: str | None = Header(default=None)):
+    """Verify credential access without disclosing the credential or buyer data."""
+    _admin(x_consultation_admin_token)
+    product_id = _product_id()
+    token = os.getenv('CONSULTATION_GUMROAD_ACCESS_TOKEN')
+    if not token:
+        raise HTTPException(503, 'Verified Gumroad sale lookup is not configured')
+    try:
+        async with asyncio.timeout(3):
+            async with httpx.AsyncClient(timeout=3, follow_redirects=False,
+                                         headers={'Authorization': 'Bearer ' + token}) as client:
+                response = await client.get('https://api.gumroad.com/v2/sales',
+                                            params={'product_id': product_id})
+                sales = _successful_sales_response(response)
+                if any(sale.get('product_id') != product_id for sale in sales):
+                    raise ValueError('Provider product scope not verified')
+                count = sum(sale.get('paid') is True and type(sale.get('price')) is int
+                            and sale['price'] > 0 and not _api_flag(sale, 'test')
+                            and not _api_flag(sale, 'is_preorder_authorization')
+                            and not _api_flag(sale, 'refunded')
+                            and not _api_flag(sale, 'partially_refunded')
+                            and not _api_flag(sale, 'disputed')
+                            and not _api_flag(sale, 'chargedback') for sale in sales)
+        # This count is for the first response page, never a lifetime total.
+        return {'authenticated': True, 'product_scoped': True, 'successful_sale_count': count}
+    except (httpx.HTTPError, TimeoutError, ValueError, TypeError):
+        raise HTTPException(503, 'Gumroad credential verification unavailable')
+
+
 def _verified_api_sale(sale: dict, trigger: GumroadTrigger, resource: str, successful_ids: set[str]):
     if not isinstance(sale, dict) or sale.get('id') != trigger.sale_id:
         raise ValueError('Sale identity mismatch')
@@ -354,11 +400,8 @@ async def fetch_verified_gumroad_sale(trigger: GumroadTrigger, resource: str):
                 listing = await client.get('https://api.gumroad.com/v2/sales', params={
                     'product_id': trigger.product_id, 'email': sale.get('purchase_email') or sale.get('email'),
                     'order_id': str(sale['order_id'])})
-                listing.raise_for_status()
-                listed = listing.json()
-                if not isinstance(listed, dict) or listed.get('success') is not True or not isinstance(listed.get('sales'), list):
-                    raise ValueError('Provider successful-sale state not verified')
-                matches = [row for row in listed['sales'] if isinstance(row, dict) and row.get('id') == trigger.sale_id]
+                listed = _successful_sales_response(listing)
+                matches = [row for row in listed if row.get('id') == trigger.sale_id]
                 successful_ids = {matches[0]['id']} if len(matches) == 1 else set()
                 verified = _verified_api_sale(sale, trigger, resource, successful_ids)
                 if matches:

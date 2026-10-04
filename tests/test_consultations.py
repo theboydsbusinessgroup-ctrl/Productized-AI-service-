@@ -192,6 +192,22 @@ def test_consultation_pages_do_not_claim_booking_from_payment_redirect():
     assert 'Your session is confirmed.' in response.text
 
 
+def test_landing_disables_unavailable_checkout_and_keeps_ebook_purchase_link(monkeypatch):
+    configure(monkeypatch)
+    response = client.get('/consultations')
+    assert response.status_code == 200
+    assert '<button id="button" disabled>' not in response.text
+    assert 'Session checkout is temporarily unavailable.' not in response.text
+    monkeypatch.delenv('CONSULTATION_GUMROAD_ACCESS_TOKEN')
+    unavailable = client.get('/consultations')
+    assert unavailable.status_code == 200
+    assert '<button id="button" disabled>' in unavailable.text
+    assert 'Session checkout is temporarily unavailable. Please check back or contact support.' in unavailable.text
+    assert 'https://boydsbusiness.gumroad.com/l/yknubt' in unavailable.text
+    assert 'CONSULTATION_GUMROAD_ACCESS_TOKEN' not in unavailable.text
+    assert 'data-checkout-ready="false"' in unavailable.text
+
+
 def mock_gumroad(monkeypatch, *, api_sale=None, listed=None, failure=None):
     value = {'id': 'sale_1', 'product_id': 'ebook_fixture', 'email': 'buyer@example.com',
              'purchase_email': 'buyer@example.com', 'order_id': 12345,
@@ -319,3 +335,65 @@ def test_refund_visible_in_second_api_read_prevents_a_stale_positive_sale_import
         assert observed[0]['refunded'] is True
     finally:
         set_consultation_store_for_tests(None)
+
+
+def mock_gumroad_status(monkeypatch, *, payload=None, status=200, failure=None):
+    requests = []
+    def handle(request):
+        requests.append(request)
+        assert request.url.path == '/v2/sales'
+        assert dict(request.url.params) == {'product_id': 'ebook_fixture'}
+        if failure:
+            raise failure
+        return httpx.Response(status, json={'success': True, 'sales': []} if payload is None else payload)
+    original = httpx.AsyncClient
+    monkeypatch.setattr('app.consultations.httpx.AsyncClient', lambda **kwargs:
+                        original(transport=httpx.MockTransport(handle), **kwargs))
+    return requests
+
+
+def test_gumroad_readiness_is_owner_only_and_fails_closed_without_api_configuration(monkeypatch):
+    configure(monkeypatch)
+    url = '/consultations/internal/gumroad-status'
+    assert client.get(url).status_code == 401
+    assert client.get(url, headers={'x-consultation-admin-token': 'wrong'}).status_code == 401
+    monkeypatch.delenv('CONSULTATION_GUMROAD_ACCESS_TOKEN')
+    response = client.get(url, headers={'x-consultation-admin-token': 'consultation_owner_fixture'})
+    assert response.status_code == 503
+
+
+def test_gumroad_readiness_verifies_empty_product_scoped_page_without_disclosing_secrets(monkeypatch):
+    configure(monkeypatch)
+    requests = mock_gumroad_status(monkeypatch)
+    response = client.get('/consultations/internal/gumroad-status',
+                          headers={'x-consultation-admin-token': 'consultation_owner_fixture'})
+    assert response.status_code == 200
+    assert response.json() == {'authenticated': True, 'product_scoped': True, 'successful_sale_count': 0}
+    assert len(requests) == 1 and requests[0].headers['authorization'] == 'Bearer gumroad_access_fixture'
+    assert 'gumroad_access_fixture' not in str(requests[0].url) and 'access_token' not in requests[0].url.params
+    assert 'gumroad_access_fixture' not in response.text
+
+
+@pytest.mark.parametrize('payload,status', [
+    ({'success': False, 'message': 'private provider detail'}, 200),
+    ({'success': True, 'sales': None}, 200),
+    ({'success': True, 'sales': [None]}, 200),
+    ({'success': True, 'sales': [{'product_id': 'another_product'}]}, 200),
+    ({'success': False}, 401),
+])
+def test_gumroad_readiness_rejects_provider_auth_errors_or_unverified_scope(monkeypatch, payload, status):
+    configure(monkeypatch)
+    mock_gumroad_status(monkeypatch, payload=payload, status=status)
+    response = client.get('/consultations/internal/gumroad-status',
+                          headers={'x-consultation-admin-token': 'consultation_owner_fixture'})
+    assert response.status_code == 503
+    assert response.json() == {'detail': 'Gumroad credential verification unavailable'}
+
+
+def test_gumroad_readiness_timeout_never_echoes_provider_exception(monkeypatch):
+    configure(monkeypatch)
+    mock_gumroad_status(monkeypatch, failure=httpx.ConnectTimeout('gumroad_access_fixture private detail'))
+    response = client.get('/consultations/internal/gumroad-status',
+                          headers={'x-consultation-admin-token': 'consultation_owner_fixture'})
+    assert response.status_code == 503
+    assert 'gumroad_access_fixture' not in response.text
