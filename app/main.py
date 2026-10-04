@@ -12,14 +12,16 @@ from app.operations import process_fulfillment
 from app.reconciliation import reconcile_stripe
 from app.store import get_store
 from app.stripe_security import construct_verified_event
+from app.consultations import router as consultation_router
 
 app = FastAPI(title="Productized AI Service Engine", version="0.8.0")
+app.include_router(consultation_router)
 
 
 @app.middleware("http")
 async def protect_order_responses(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path in {"/handoff", "/success", "/checkout"} or request.url.path.startswith(("/orders/", "/internal/")):
+    if request.url.path in {"/handoff", "/success", "/checkout"} or request.url.path.startswith(("/orders/", "/internal/", "/consultations")):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
     return response
