@@ -3,7 +3,7 @@ import asyncio
 import os
 import secrets
 from datetime import datetime, timedelta, timezone as dt_timezone
-from urllib.parse import parse_qs, quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, Field, StrictBool
 
 from app.consultation_store import ConsultationConflict, get_consultation_store
+from app.payment_links import build_payment_link
 
 router = APIRouter(prefix='/consultations', tags=['consultations'])
 PRICE_CENTS = 1900
@@ -145,14 +146,14 @@ def checkout(payload: Checkout):
     if not all(os.getenv(name) for name in PAYMENT_SETTING_NAMES):
         raise HTTPException(503, 'Consultation checkout is not configured')
     base = os.environ['CONSULTATION_PAYMENT_LINK_URL']
-    parsed = urlsplit(base)
-    if parsed.scheme != 'https' or parsed.hostname != 'buy.stripe.com' or parsed.fragment:
+    try:
+        build_payment_link(base, {})
+    except ValueError:
         raise HTTPException(503, 'Consultation payment URL is invalid')
     row = _operation(lambda store: store.create_request(payload.ebook_order_id.strip(),
                      str(payload.customer_email).casefold(), _product_id()))
-    sep = '&' if parsed.query else '?'
     return {'request_id': row['request_id'], 'state': row['state'], 'amount_usd': 19,
-            'checkout_url': base + sep + urlencode({'client_reference_id': row['request_id'],
+            'checkout_url': build_payment_link(base, {'client_reference_id': row['request_id'],
                                                     'prefilled_email': str(payload.customer_email)})}
 
 
