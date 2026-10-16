@@ -55,6 +55,6 @@ After merge and production deployment, complete one controlled purchase:
 2. Confirm the order transitions from `CHECKOUT_PENDING` to `PAID`.
 3. Confirm `/success?session_id=...` unlocks the intake form.
 4. Submit intake and download the generated deliverable.
-5. Confirm no secret, intake token, or database credential appears in browser-visible output or logs.
+5. Confirm server secrets and database credentials never reach browser-visible output or logs. Intake tokens are intentionally delivered to the purchasing browser for intake and download; keep them out of logs, shared URLs, screenshots, and third-party disclosures.
 
 Do not begin customer acquisition until this flow succeeds end to end.
