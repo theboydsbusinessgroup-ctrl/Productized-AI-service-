@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.generator import build_content_pack
 from app.operations import process_fulfillment
+from app.payment_links import build_payment_link
 from app.reconciliation import reconcile_stripe
 from app.store import get_store
 from app.stripe_security import construct_verified_event
@@ -164,7 +165,12 @@ def landing_page():
 
 def payment_configuration():
     keys = ("DATABASE_URL", "STRIPE_PAYMENT_LINK_URL", "STRIPE_PAYMENT_LINK_ID", "STRIPE_WEBHOOK_SECRET")
-    return {key: bool(os.getenv(key)) for key in keys}
+    configuration = {key: bool(os.getenv(key)) for key in keys}
+    try:
+        build_payment_link(os.getenv("STRIPE_PAYMENT_LINK_URL", ""), {})
+    except ValueError:
+        configuration["STRIPE_PAYMENT_LINK_URL"] = False
+    return configuration
 
 
 @app.get("/health")
@@ -208,12 +214,11 @@ def create_checkout(payload: CheckoutRequest):
         get_store().log_event("checkout_started", order_id=order_id, source=payload.source)
     except Exception:
         pass
-    sep = "&" if "?" in base else "?"
     return CheckoutResponse(
         order_id=order_id,
         state=OrderState.CHECKOUT_PENDING,
         amount_usd=49,
-        checkout_url=f"{base}{sep}client_reference_id={order_id}",
+        checkout_url=build_payment_link(base, {"client_reference_id": order_id}),
     )
 
 
